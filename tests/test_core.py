@@ -13,7 +13,7 @@ from denoise.core import add_noise, denoise, psnr
 # It allows you to call endpoints using client.post() or client.get() without deploying a server
 client = TestClient(app)
 
-# Referece image used to evaluate the denoising algorithms
+# Reference image used to evaluate the denoising algorithms
 CLEAN = img_as_float(data.camera())[:128, :128] # small crop = fast tests
 
 # Test whether denoising improves PSNR
@@ -37,7 +37,7 @@ def test_invalid_param_raises():
 def test_api_returns_image(): # Defines an API integration test
     buf = io.BytesIO()
     Image.fromarray((CLEAN * 255).astype(np.uint8)).save(buf, format="PNG")
-    r = client.post( # Siulates an HTTP POST request
+    r = client.post( # Simulates an HTTP POST request
         "/denoise",
         files={"file": ("x.png", buf.getvalue(), "image/png")},
         # Uploads the image under the required form field file

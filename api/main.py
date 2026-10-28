@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from PIL import Image
 
 from denoise.core import METHODS, denoise
-from denoise.model import LambdaPredictor  
+from denoise.model import LambdaPredictor
 
 from skimage.restoration import estimate_sigma
 from api.db import get_recent, get_stats, log_request
@@ -28,14 +28,13 @@ predictor = LambdaPredictor(str(MODEL_PATH))
 
 
 def load_grayscale(data: bytes) -> np.ndarray:
-    # Turn uploaded bytes into a grayscale float image in [0, 1],
-    # which is the umeric format expected by the denoising algorithm
+    # Turn uploaded bytes into a grayscale float image in [0, 1], which is the numeric format expected by the denoising algorithm
     img = Image.open(io.BytesIO(data)).convert("L")
     return np.asarray(img, dtype=np.float64) / 255.0
 
 # It does the opposite of the load_grayscale function
 # It converts a processed NumPy array back into an image that can be transmitted to the client
-def to_png_based64(image: np.ndarray) -> str:
+def to_png_base64(image: np.ndarray) -> str:
     # Encode a [0, 1] image as a PNG, then as base64 text so it fits in JSON
     img = Image.fromarray((np.clip(image, 0, 1) * 255).astype(np.uint8))
     buf = io.BytesIO()
@@ -56,7 +55,7 @@ def stats():
 def recent_requests(limit: int = Query(20, ge=1, le=100)):
     return get_recent(DB_PATH, limit)
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def index():
     return FileResponse(STATIC_DIR / "index.html")
 
@@ -81,14 +80,14 @@ async def denoise_endpoint(
     start = time.perf_counter()
     try:
         if method == "tv_adaptive":
-            param = predictor.predict(image)          # the model chooses lambda
+            param = predictor.predict(image) # the model chooses lambda
             result = denoise(image, "tv", param)
         else:
             result = denoise(image, method, param)
     except ValueError as e:
         raise HTTPException(400, str(e))
     
-    # This measures the core denoising execution time, not the total API response time
+    # Measures prediction (if adaptive) + denoising, not the full HTTP response time
     runtime_ms = (time.perf_counter() - start) * 1000
 
     # Logging comes after a successful denoise, so failed requests aren’t recorded
@@ -97,10 +96,10 @@ async def denoise_endpoint(
     
     # FastAPI automatically converts this dictionary into JSON
     return {
-                "method": method,
+        "method": method,
         "param": round(param, 4),
         "param_source": "predicted" if method == "tv_adaptive" else "user",
         "shape": list(image.shape),
         "runtime_ms": round(runtime_ms, 2),
-        "image_png_base64": to_png_based64(result),
+        "image_png_base64": to_png_base64(result),
     }

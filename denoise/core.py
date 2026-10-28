@@ -1,4 +1,3 @@
-
 # Core image denoising functions
 import numpy as np
 from skimage.filters import gaussian

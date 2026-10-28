@@ -6,8 +6,8 @@ from skimage import data, img_as_float
 from denoise.core import add_noise, denoise, psnr
 from denoise.model import LambdaPredictor
 
-FIXED_LAM = 0.136                      # best fixed weight from training (Step 8)
-clean = img_as_float(data.camera())    # test image: never seen in training
+FIXED_LAM = 0.136 # best fixed weight, from scripts/evaluate.py
+clean = img_as_float(data.camera())  # test image: never seen in training
 predictor = LambdaPredictor("models/lambda_mlp.pt")
 
 fig, axes = plt.subplots(2, 4, figsize=(14, 8.5), constrained_layout=True)

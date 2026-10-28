@@ -1,4 +1,3 @@
-
 # Features describing a noisy image, used to predict the TV weight.
 
 import numpy as np

@@ -1,4 +1,5 @@
-"""Build the dataset: for each noisy patch, try every TV weight and record the PSNR."""
+# Build the dataset: for each noisy patch, try every TV weight and record the PSNR
+from pathlib import Path
 import numpy as np
 from skimage import data, img_as_float
 from skimage.color import rgb2gray
@@ -60,6 +61,7 @@ def build(names, rng, keep_patches=False):
 
 
 if __name__ == "__main__":
+    Path("data").mkdir(exist_ok=True)
     rng = np.random.default_rng(0)
     train = build(TRAIN_IMAGES, rng)
     test = build(TEST_IMAGES, rng, keep_patches=True)

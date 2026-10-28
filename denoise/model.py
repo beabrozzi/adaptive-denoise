@@ -1,4 +1,3 @@
-
 # Small MLP that predicts log(TV weight) from image features
 import numpy as np
 import torch

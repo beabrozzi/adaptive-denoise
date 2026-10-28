@@ -1,4 +1,3 @@
-
 # SQLite log of denoising requests, used for monitoring
 
 import sqlite3
