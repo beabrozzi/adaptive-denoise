@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image
 
@@ -14,7 +14,7 @@ from denoise.core import METHODS, denoise
 from denoise.model import LambdaPredictor  
 
 from skimage.restoration import estimate_sigma
-from api.db import get_stats, log_request
+from api.db import get_recent, get_stats, log_request
 
 MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "lambda_mlp.pt"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -50,6 +50,10 @@ def health():
 @app.get("/stats")
 def stats():
     return get_stats(DB_PATH)
+
+@app.get("/requests")
+def recent_requests(limit: int = Query(20, ge=1, le=100)):
+    return get_recent(DB_PATH, limit)
 
 @app.get("/")
 def index():

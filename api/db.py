@@ -56,3 +56,11 @@ def get_stats(path: Path) -> dict:
         },
         "out_of_training_range": out_of_range,
     }
+
+def get_recent(path: Path, limit: int = 20) -> list[dict]:
+    with closing(connect(path)) as conn:
+        conn.row_factory = sqlite3.Row      # rows behave like dicts
+        rows = conn.execute(
+            "SELECT * FROM requests ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]

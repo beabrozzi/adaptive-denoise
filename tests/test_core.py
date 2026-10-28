@@ -97,3 +97,11 @@ def test_failed_requests_are_not_logged():
     client.post("/denoise", files={"file": ("x.png", _png_bytes(), "image/png")},
                 data={"method": "magic"})
     assert client.get("/stats").json()["total_requests"] == 0
+
+def test_recent_requests_endpoint():
+    client.post("/denoise", files={"file": ("x.png", _png_bytes(), "image/png")},
+                data={"method": "tv_adaptive"})
+    rows = client.get("/requests").json()
+    assert len(rows) == 1
+    assert rows[0]["method"] == "tv_adaptive"
+    assert rows[0]["param"] > 0

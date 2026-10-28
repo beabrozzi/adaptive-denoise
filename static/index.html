@@ -16,6 +16,9 @@
   .meta { font-size: 13px; color: #555; min-height: 36px; margin-top: 6px; }
   #original { filter: grayscale(1); }
   #status { color: #a00; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 13px; }
+  th, td { border-bottom: 1px solid #eee; padding: 6px 8px; text-align: left; }
+  th { color: #555; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -34,6 +37,15 @@
   <div class="card"><img id="tv"><div class="meta" id="tv-meta">TV, fixed λ</div></div>
   <div class="card"><img id="tv_adaptive"><div class="meta" id="tv_adaptive-meta">TV, adaptive λ</div></div>
 </div>
+
+<h2>Request log</h2>
+<p class="sub">Last 15 requests, read from the SQLite database via GET /requests.</p>
+<table id="log">
+  <thead>
+    <tr><th>id</th><th>time (UTC)</th><th>method</th><th>param</th><th>σ̂</th><th>size</th><th>runtime (ms)</th></tr>
+  </thead>
+  <tbody></tbody>
+</table>
 
 <script>
 const METHODS = [
@@ -66,6 +78,25 @@ async function callApi(file, { method, param }) {
   return body;
 }
 
+// Fetch the latest rows from the database and fill the table
+async function loadLog() {
+  const rows = await (await fetch("/requests?limit=15")).json();
+  const tbody = document.querySelector("#log tbody");
+  tbody.innerHTML = "";
+  for (const r of rows) {
+    const cells = [r.id, r.created_at.slice(11, 19), r.method, r.param.toFixed(4),
+                   r.sigma_hat.toFixed(4), `${r.height}×${r.width}`, r.runtime_ms.toFixed(1)];
+    const tr = document.createElement("tr");
+    for (const c of cells) {
+      const td = document.createElement("td");
+      td.textContent = c;   // textContent, not innerHTML: safe against injected HTML
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+}
+loadLog();   // show the log as soon as the page opens
+
 runButton.addEventListener("click", async () => {
   const file = fileInput.files[0];
   statusEl.textContent = "Denoising…";
@@ -79,6 +110,7 @@ runButton.addEventListener("click", async () => {
       document.getElementById(method + "-meta").textContent =
         `${label}: param = ${r.param} (${r.param_source}), ${r.runtime_ms} ms`;
     });
+    await loadLog();   // refresh the log with the 3 new rows
     statusEl.textContent = "";
   } catch (err) {
     statusEl.textContent = "Error: " + err.message;
