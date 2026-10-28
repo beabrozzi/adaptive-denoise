@@ -1,41 +1,94 @@
 # Adaptive Denoise
 
-An image-denoising service where a small neural network chooses the
-**Total Variation (TV) regularisation strength λ for each image**, instead of
-using one fixed value for every input.
+An image-denoising application in which a small neural network selects the
+regularisation weight **λ** for Total Variation (TV) denoising, separately for
+each image. The project combines a supervised learning pipeline with a REST
+API, a SQLite request log and a web interface for comparing methods.
 
-![Fixed vs adaptive λ on an unseen image](results/comparison.png)
+![Fixed vs adaptive λ on an image not used in training](results/comparison.png)
+
+*Unseen test image. With light noise (top), the adaptive λ keeps more detail
+than the fixed one (+2.9 dB).*
 
 ## Motivation
 
-TV denoising removes noise while keeping edges sharp, but its result depends
-heavily on λ: too small and noise remains, too large and the image becomes
-flat and "cartoon-like". The best λ changes with the noise level and the
-image content, so a single hand-picked value is a compromise.
+During my research internship at UCL, I worked on learning regularisation
+parameters for TV denoising using Fenchel–Young losses. I decided to revisit
+the problem independently using a simpler supervised learning approach.
 
-During my research internship at UCL I worked on learning TV regularisation
-parameters using Fenchel–Young losses. This is an independent personal
-project exploring the same question with a simpler, fully supervised approach,
-and turning it into a usable tool.
+TV denoising requires balancing noise removal against preserving image
+detail. If the regularisation weight is too low, noise remains in the image;
+if it is too high, important details can be lost. The aim of this project is
+to predict a suitable weight based on the characteristics of the noisy image,
+rather than relying on a fixed, manually selected value.
 
-## How it works
+I also wanted to explore how this type of image-processing model could be
+incorporated into a standalone application and accessed through an API.
 
-1. **Training data**: random 128×128 patches from scikit-image sample images,
-   corrupted with Gaussian noise (σ between 0.02 and 0.25). For each patch,
-   25 log-spaced values of λ are tried and the one with the highest PSNR is
-   kept as the label.
-2. **Features**: the model sees only the noisy image, summarised by
-   3 features: estimated noise level (wavelet-based), mean gradient magnitude,
-   and intensity standard deviation.
-3. **Model**: a small MLP (3 → 16 → 16 → 1) trained in PyTorch to predict
-   **log(λ)**, so predictions are always positive after `exp()`.
-   Features are standardised with training statistics, and early stopping
-   on a validation split prevents overfitting.
-4. **Serving**: a FastAPI service exposes `/denoise`. With
-   `method=tv_adaptive` the model predicts λ, then TV denoising runs with it.
-   A small web page calls the API and shows the methods side by side.
-5. **Monitoring**: every successful request is logged to a SQLite database,
-   and `/stats` summarises usage, runtimes and the λ values the model chooses.
+## Method
+
+### Dataset generation
+
+From each scikit-image sample image, 40 random 128 × 128 patches are
+extracted and corrupted with Gaussian noise of standard deviation σ between
+0.02 and 0.25. Each noisy patch is then denoised with 25 log-spaced values of
+λ between 0.01 and 0.5, and the value giving the highest PSNR against the
+clean patch becomes the training target.
+
+Two images (`camera`, `coins`) are held out completely for testing, so that
+patches from the same photograph never appear in both training and test sets.
+
+### Features and model
+
+The model uses three features extracted from each noisy patch:
+
+- estimated noise standard deviation (wavelet-based estimator),
+- mean gradient magnitude, to capture edges and texture,
+- intensity standard deviation, to capture contrast.
+
+A PyTorch MLP (`3 → 16 → 16 → 1`) is trained to predict **log λ**. Predicting
+log λ makes it easier to handle different weight values and ensures λ is
+positive after exponentiation. Features are standardised using
+training-set statistics only, and early stopping on a validation split keeps
+the weights from the epoch with the lowest validation loss.
+
+### API and web interface
+
+The FastAPI backend provides a `/denoise` endpoint. It supports three methods:
+
+| Method | Description |
+|---|---|
+| `gaussian` | Gaussian blur; the client sets the blur strength (`param`) |
+| `tv` | TV denoising with a client-supplied λ (`param`) |
+| `tv_adaptive` | TV denoising with λ predicted by the MLP |
+
+The endpoint accepts an uploaded image and returns JSON containing the
+denoised image (Base64-encoded PNG), the λ used and whether it was predicted,
+the image dimensions and the processing time. The model is loaded once at
+start-up, not on every request.
+
+The web interface (HTML and JavaScript) uploads an image, runs the three
+methods in parallel and displays the results side by side, followed by a live
+table of recent requests read from the database. The web interface communicates with the backend through HTTP, using the same
+endpoints available to external applications.
+
+### Request logging
+
+Every successful request is stored as one row in a SQLite table. Uploaded
+images are not retained; only metadata is logged:
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | INTEGER | Primary key, auto-incremented |
+| `created_at` | TEXT | UTC timestamp (ISO 8601) |
+| `method` | TEXT | `gaussian`, `tv` or `tv_adaptive` |
+| `param` | REAL | Parameter used (the predicted λ for `tv_adaptive`) |
+| `sigma_hat` | REAL | Estimated noise level of the uploaded image |
+| `height`, `width` | INTEGER | Image size in pixels |
+| `runtime_ms` | REAL | Processing time in milliseconds |
+
+All queries are parameterised. The estimated noise level is also logged to identify
+requests outside the training distribution; `/stats` reports how many there are.
 
 ## Architecture
 
@@ -47,8 +100,8 @@ flowchart LR
     end
 
     subgraph Server["FastAPI server"]
-        API["REST endpoints<br/>POST /denoise<br/>GET /stats, GET /health"]
-        VAL["Input validation<br/>(400 on bad input)"]
+        API["REST endpoints<br/>POST /denoise<br/>GET /requests, /stats, /health"]
+        VAL["Input validation<br/>(400 / 422 on bad input)"]
         FEAT["Feature extraction<br/>noise level, gradients, contrast"]
         MLP["MLP (PyTorch)<br/>predicts log λ"]
         TV["TV denoising<br/>(scikit-image)"]
@@ -65,59 +118,67 @@ flowchart LR
     WEB -- "POST multipart/form-data" --> API
     CLI -- "POST multipart/form-data" --> API
     API --> VAL --> FEAT --> MLP --> TV
-    TV -- "JSON + base64 PNG" --> API
+    TV -- "JSON + Base64 PNG" --> API
     API -- "INSERT (log each request)" --> DB
-    API -- "SELECT ... GROUP BY (/stats)" --> DB
+    API -- "SELECT (/requests, /stats)" --> DB
     DATA --> TRAIN --> MODEL
-    MODEL -. "loaded once at startup" .-> MLP
+    MODEL -. "loaded once at start-up" .-> MLP
 ```
 
-The web page is a client like any other: it only talks to the server over
-HTTP and has no direct access to the model or the database.
+Training runs offline and produces a model file; the server only performs
+inference. The denoising algorithms, feature extraction, API handling and request
+logging are implemented in separate modules.
 
 ## Results
 
-Evaluated on **80 patches from 2 images never used in training**
-(`camera`, `coins`). The fixed baseline is the single λ with the best
-average PSNR on the *training* set (λ = 0.136).
+Evaluation uses 80 patches from the two held-out images. Three ways of
+choosing λ are compared:
+
+- **Fixed:** the single λ with the highest mean PSNR on the *training* set (0.136).
+- **Adaptive:** λ predicted per patch by the MLP.
+- **Oracle:** the best of the 25 grid values for each patch, found using the
+  clean image. It is not available in practice and serves as an upper bound.
 
 | Method | Mean PSNR (dB) |
-|---|---|
+|---|---:|
 | Noisy input | 18.95 |
 | TV, fixed λ | 25.87 |
 | **TV, adaptive λ (MLP)** | **26.85** |
-| TV, oracle λ (best of grid, needs clean image) | 27.14 |
+| TV, oracle λ | 27.14 |
 
-- Adaptive λ closes **77%** of the gap between the fixed baseline and the oracle.
-- It beats the fixed λ on **74%** of test patches.
-- The gain is largest at low noise, where a fixed λ over-smooths:
+- The adaptive model improves PSNR by **0.98 dB** over the fixed baseline and
+  recovers **77%** of the gap to the oracle.
+- It outperforms the fixed λ on **74%** of test patches.
+- The largest gains occur at low noise levels, where the fixed λ over-smooths.
+  At high noise the fixed value is already close to optimal and the gain is small.
 
-![PSNR gain over fixed λ by noise level](results/eval.png)
+![PSNR gain over the fixed λ by estimated noise level](results/eval.png)
 
-## Quick start
+These results apply to synthetic Gaussian noise and two held-out images.
+
+## Installation
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
 uvicorn api.main:app --reload
 ```
 
-- Web page: http://127.0.0.1:8000/
-- Interactive API docs: http://127.0.0.1:8000/docs
-- Usage statistics: http://127.0.0.1:8000/stats
+- Web interface: http://127.0.0.1:8000/
+- Interactive API documentation: http://127.0.0.1:8000/docs
+- Request statistics: http://127.0.0.1:8000/stats
 
-To reproduce the model and results:
+### Reproducing the experiments
 
 ```bash
-python -m scripts.make_dataset   # build training/test data
+python -m scripts.make_dataset   # generate training and test data
 python -m scripts.train          # train the MLP
-python -m scripts.evaluate       # metrics + results/eval.png
-pytest -v                        # run the tests
+python -m scripts.evaluate       # compute metrics and results/eval.png
+pytest -v                        # run the test suite
 ```
 
-## Using the API from another application
+## API usage
 
 ```bash
 curl -X POST http://127.0.0.1:8000/denoise \
@@ -125,7 +186,7 @@ curl -X POST http://127.0.0.1:8000/denoise \
   -F "method=tv_adaptive"
 ```
 
-Response (JSON):
+Example response (image data abbreviated):
 
 ```json
 {
@@ -140,62 +201,60 @@ Response (JSON):
 
 | Endpoint | Description |
 |---|---|
-| `POST /denoise` | Denoise an image. `method`: `gaussian` (param = blur σ), `tv` (param = λ), `tv_adaptive` (λ predicted) |
-| `GET /stats` | Request counts, average runtime and average λ per method; number of requests outside the training noise range |
-| `GET /health` | Liveness check |
-
-## Request logging (SQLite)
-
-Each successful `/denoise` call is stored as one row in the `requests` table
-(`data/requests.db`). Images themselves are not stored, only metadata:
-
-| Column | Type | Meaning |
-|---|---|---|
-| `id` | INTEGER | Primary key, auto-incremented |
-| `created_at` | TEXT | UTC timestamp (ISO 8601) |
-| `method` | TEXT | `gaussian`, `tv` or `tv_adaptive` |
-| `param` | REAL | Parameter used (λ for TV; predicted λ for `tv_adaptive`) |
-| `sigma_hat` | REAL | Estimated noise level of the uploaded image |
-| `height`, `width` | INTEGER | Image size in pixels |
-| `runtime_ms` | REAL | Processing time |
-
-Queries are parameterised. Logging `sigma_hat` makes it possible to detect
-**data drift**: requests with σ̂ above the training range (0.25) are counted
-by `/stats`.
+| `POST /denoise` | Denoise an uploaded image with the chosen method |
+| `GET /requests?limit=20` | Most recent logged requests (limit between 1 and 100) |
+| `GET /stats` | Request counts, mean runtime and mean λ per method; requests outside the training noise range |
+| `GET /health` | Health check |
 
 ## Project structure
 
-```
-denoise/    core algorithms, feature extraction, model definition
-api/        FastAPI service and SQLite request log
-static/     web page (HTML + JavaScript client of the API)
+```text
+denoise/    denoising methods, feature extraction, MLP definition
+api/        FastAPI endpoints and SQLite logging
+static/     web interface (HTML + JavaScript)
 scripts/    dataset generation, training, evaluation
 tests/      unit and API tests
 models/     trained model weights
-results/    evaluation charts
+results/    evaluation figures
 ```
 
 ## Limitations and future work
 
-- **High noise**: gains are small at high noise levels; the gradient
-  feature is dominated by noise there. Noise-robust features (e.g. gradients
-  of a pre-smoothed image) or a small CNN on the pixels could help.
-- **Low noise / clean images**: real uploads are often cleaner than the
-  training range (σ ≥ 0.02), so the model extrapolates below the smallest λ
-  it was trained on. Widening the training range and also flagging low-σ̂
-  requests in `/stats` would address this.
-- **Metric**: PSNR does not fully match perceived quality. Two values of λ
-  can have the same PSNR but keep different amounts of texture. Evaluating
-  (or training) with SSIM is a natural next step.
-- **TV itself** loses fine texture even at the best λ; stronger denoisers
-  (non-local means, BM3D, learned denoisers) would raise the ceiling.
-- **Security**: there is no authentication; this is a local demo. A real
-  deployment would need API keys or user authentication, served over HTTPS.
-- Grayscale only, Gaussian noise only, trained on 128×128 patches.
-- Small test set (2 images); more held-out images would give tighter estimates.
+**Generalisation.** The model is trained on synthetic Gaussian noise and
+128 × 128 patches. Its behaviour on real camera noise and other noise
+distributions has not been evaluated.
 
-## How this was built
+**High noise.** At high noise levels the gradient feature mostly measures
+noise rather than image structure, which limits the gain. Computing gradients
+on a pre-smoothed image, or replacing the hand-crafted features with a small
+convolutional network, could help.
 
-I used Claude and ChatGPT as coding assistants throughout this project.
-I chose the problem, designed the experiments and the evaluation protocol,
-and made the design decisions; I reviewed, ran and tested all of the code.
+**Low noise.** Training starts at σ = 0.02, but real uploads are often
+cleaner, so the model extrapolates below the smallest λ it was trained on.
+Widening the training range and flagging low-noise requests in `/stats` would
+address this.
+
+**Evaluation.** PSNR does not fully reflect perceived quality: two values of λ
+can give similar PSNR while preserving different amounts of texture. SSIM and
+a larger held-out set would give a more complete picture.
+
+**Concurrency.** The CPU-intensive denoising call runs synchronously inside
+an asynchronous endpoint, so it blocks the event loop of its worker process
+while it runs. With the default single Uvicorn worker, requests are therefore
+effectively handled one after another. Moving this work to a thread or
+process pool, or running several workers, would allow concurrent processing.
+
+**Deployment.** The application is designed for local use. A production
+deployment would need authentication, HTTPS and limits on upload size.
+
+## Development
+
+This is an independent project inspired by my UCL research internship. The
+internship used a Fenchel–Young-based approach; here the model is trained by
+supervised regression on grid-search targets, and all code was written for
+this project.
+
+Claude and ChatGPT were used as coding assistants for implementation and
+debugging. I chose the problem, designed the experiments and the evaluation
+protocol, and made the design decisions; I reviewed, ran and tested all of the
+code.
