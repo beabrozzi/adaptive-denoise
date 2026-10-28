@@ -76,3 +76,24 @@ def test_api_requires_param_for_fixed_methods():
     r = client.post("/denoise", files={"file": ("x.png", _png_bytes(), "image/png")},
                     data={"method": "tv"})
     assert r.status_code == 400
+
+@pytest.fixture(autouse=True)
+def temp_db(tmp_path, monkeypatch):
+    """Every test uses a fresh, temporary database."""
+    monkeypatch.setattr("api.main.DB_PATH", tmp_path / "test.db")
+
+
+def test_requests_are_logged_in_stats():
+    client.post("/denoise", files={"file": ("x.png", _png_bytes(), "image/png")},
+                data={"method": "tv_adaptive"})
+    client.post("/denoise", files={"file": ("x.png", _png_bytes(), "image/png")},
+                data={"method": "tv", "param": "0.1"})
+    stats = client.get("/stats").json()
+    assert stats["total_requests"] == 2
+    assert set(stats["by_method"]) == {"tv", "tv_adaptive"}
+
+
+def test_failed_requests_are_not_logged():
+    client.post("/denoise", files={"file": ("x.png", _png_bytes(), "image/png")},
+                data={"method": "magic"})
+    assert client.get("/stats").json()["total_requests"] == 0

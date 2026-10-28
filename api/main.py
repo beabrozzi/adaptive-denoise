@@ -5,7 +5,6 @@ import io
 import time
 from pathlib import Path
 
-
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -14,8 +13,12 @@ from PIL import Image
 from denoise.core import METHODS, denoise
 from denoise.model import LambdaPredictor  
 
+from skimage.restoration import estimate_sigma
+from api.db import get_stats, log_request
+
 MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "lambda_mlp.pt"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+DB_PATH = Path(__file__).resolve().parent.parent / "data" / "requests.db"
 API_METHODS = METHODS + ("tv_adaptive",)
 # Creating the FastAPI application, returns an application obj stored in the var app
 app = FastAPI(title="Adaptive Denoise API")
@@ -43,6 +46,10 @@ def to_png_based64(image: np.ndarray) -> str:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/stats")
+def stats():
+    return get_stats(DB_PATH)
 
 @app.get("/")
 def index():
@@ -79,6 +86,10 @@ async def denoise_endpoint(
     # This measures the core denoising execution time, not the total API response time
     runtime_ms = (time.perf_counter() - start) * 1000
 
+    # Logging comes after a successful denoise, so failed requests aren’t recorded
+    sigma_hat = float(estimate_sigma(image))
+    log_request(DB_PATH, method, float(param), sigma_hat, image.shape, runtime_ms)
+    
     # FastAPI automatically converts this dictionary into JSON
     return {
                 "method": method,
