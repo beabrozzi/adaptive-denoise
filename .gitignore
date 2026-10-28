@@ -3,3 +3,4 @@ __pycache__/
 *.png
 data/
 data/
+!results/*.png
