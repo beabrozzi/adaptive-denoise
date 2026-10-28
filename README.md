@@ -13,7 +13,7 @@ than the fixed one (+2.9 dB).*
 ## Motivation
 
 During my research internship at UCL, I worked on learning regularisation
-parameters for TV denoising using Fenchel–Young losses. I decided to revisit
+parameters for TV denoising using Fenchel-Young losses. I decided to revisit
 the problem independently using a simpler supervised learning approach.
 
 TV denoising requires balancing noise removal against preserving image
@@ -250,7 +250,7 @@ deployment would need authentication, HTTPS and limits on upload size.
 ## Development
 
 This is an independent project inspired by my UCL research internship. The
-internship used a Fenchel–Young-based approach; here the model is trained by
+internship used a Fenchel-Young-based approach; here the model is trained by
 supervised regression on grid-search targets, and all code was written for
 this project.
 
