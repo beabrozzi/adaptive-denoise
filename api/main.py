@@ -22,7 +22,7 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "requests.db"
 API_METHODS = METHODS + ("tv_adaptive",)
 
 # Creating the FastAPI application, returns an application obj stored in the var app
-app = FastAPI(title="λ-Lens API")
+app = FastAPI(title="Aletheia API")
 # Load the model once
 predictor = LambdaPredictor(str(MODEL_PATH))
 

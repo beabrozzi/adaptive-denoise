@@ -1,4 +1,4 @@
-# λ-Lens: Adaptive Image Denoising
+# Aletheia: Adaptive Image Denoising
 
 An image-denoising application in which a small neural network selects the
 regularisation weight **λ** for Total Variation (TV) denoising, separately for
@@ -95,7 +95,7 @@ requests outside the training distribution; `/stats` reports how many there are.
 ```mermaid
 flowchart LR
     subgraph Clients
-        WEB["λ-Lens web app<br/>(HTML + JavaScript)"]
+        WEB["Aletheia web app<br/>(HTML + JavaScript)"]
         CLI["Any other app<br/>(e.g. curl)"]
     end
 
