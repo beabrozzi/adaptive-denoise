@@ -20,8 +20,9 @@ MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "lambda_mlp.pt"
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "requests.db"
 API_METHODS = METHODS + ("tv_adaptive",)
+
 # Creating the FastAPI application, returns an application obj stored in the var app
-app = FastAPI(title="Adaptive Denoise API")
+app = FastAPI(title="λ-Lens API")
 # Load the model once
 predictor = LambdaPredictor(str(MODEL_PATH))
 

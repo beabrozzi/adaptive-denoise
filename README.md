@@ -1,4 +1,4 @@
-# Adaptive Denoise
+# λ-Lens: Adaptive Image Denoising
 
 An image-denoising application in which a small neural network selects the
 regularisation weight **λ** for Total Variation (TV) denoising, separately for
@@ -95,8 +95,8 @@ requests outside the training distribution; `/stats` reports how many there are.
 ```mermaid
 flowchart LR
     subgraph Clients
-        WEB["Web page<br/>(HTML + JavaScript)"]
-        CLI["Any other app<br/>(curl, Python script)"]
+        WEB["λ-Lens web app<br/>(HTML + JavaScript)"]
+        CLI["Any other app<br/>(e.g. curl)"]
     end
 
     subgraph Server["FastAPI server"]
@@ -115,9 +115,11 @@ flowchart LR
         MODEL["lambda_mlp.pt"]
     end
 
-    WEB -- "POST multipart/form-data" --> API
-    CLI -- "POST multipart/form-data" --> API
-    API --> VAL --> FEAT --> MLP --> TV
+    WEB -- "POST /denoise, GET /requests" --> API
+    CLI -- "POST /denoise" --> API
+    API --> VAL
+    VAL -- "tv_adaptive" --> FEAT --> MLP --> TV
+    VAL -- "gaussian / tv (λ given)" --> TV
     TV -- "JSON + Base64 PNG" --> API
     API -- "INSERT (log each request)" --> DB
     API -- "SELECT (/requests, /stats)" --> DB
