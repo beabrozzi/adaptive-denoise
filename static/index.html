@@ -1,0 +1,91 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Adaptive Denoise</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 20px; color: #222; }
+  h1 { margin-bottom: 4px; }
+  .sub { color: #666; margin-top: 0; }
+  .controls { display: flex; gap: 12px; align-items: center; margin: 24px 0; }
+  button { padding: 8px 18px; font-size: 15px; cursor: pointer; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .card { text-align: center; }
+  .card img { width: 100%; aspect-ratio: 1; object-fit: contain; border: 1px solid #ddd; background: #f4f4f4; }
+  .meta { font-size: 13px; color: #555; min-height: 36px; margin-top: 6px; }
+  #original { filter: grayscale(1); }
+  #status { color: #a00; }
+</style>
+</head>
+<body>
+<h1>Adaptive Denoise</h1>
+<p class="sub">Upload a noisy image. A small neural network picks the TV denoising strength (λ) for it.</p>
+
+<div class="controls">
+  <input type="file" id="file" accept="image/*">
+  <button id="run" disabled>Denoise</button>
+  <span id="status"></span>
+</div>
+
+<div class="grid">
+  <div class="card"><img id="original"><div class="meta">Input (grayscale)</div></div>
+  <div class="card"><img id="gaussian"><div class="meta" id="gaussian-meta">Gaussian blur</div></div>
+  <div class="card"><img id="tv"><div class="meta" id="tv-meta">TV, fixed λ</div></div>
+  <div class="card"><img id="tv_adaptive"><div class="meta" id="tv_adaptive-meta">TV, adaptive λ</div></div>
+</div>
+
+<script>
+const METHODS = [
+  { method: "gaussian",    param: 1.0,   label: "Gaussian blur" },
+  { method: "tv",          param: 0.136, label: "TV, fixed λ" },
+  { method: "tv_adaptive", param: null,  label: "TV, adaptive λ" },
+];
+
+const fileInput = document.getElementById("file");
+const runButton = document.getElementById("run");
+const statusEl = document.getElementById("status");
+
+// Show the chosen image immediately (before calling the API)
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  document.getElementById("original").src = URL.createObjectURL(file);
+  runButton.disabled = false;
+});
+
+// Send one request to the API and return its JSON
+async function callApi(file, { method, param }) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("method", method);
+  if (param !== null) form.append("param", param);
+  const response = await fetch("/denoise", { method: "POST", body: form });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.detail || response.statusText);
+  return body;
+}
+
+runButton.addEventListener("click", async () => {
+  const file = fileInput.files[0];
+  statusEl.textContent = "Denoising…";
+  runButton.disabled = true;
+  try {
+    // All three requests run in parallel
+    const results = await Promise.all(METHODS.map(m => callApi(file, m)));
+    results.forEach((r, i) => {
+      const { method, label } = METHODS[i];
+      document.getElementById(method).src = "data:image/png;base64," + r.image_png_base64;
+      document.getElementById(method + "-meta").textContent =
+        `${label}: param = ${r.param} (${r.param_source}), ${r.runtime_ms} ms`;
+    });
+    statusEl.textContent = "";
+  } catch (err) {
+    statusEl.textContent = "Error: " + err.message;
+  } finally {
+    runButton.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

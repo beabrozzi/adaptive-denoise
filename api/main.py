@@ -5,14 +5,17 @@ import io
 import time
 from pathlib import Path
 
+
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from PIL import Image
 
 from denoise.core import METHODS, denoise
 from denoise.model import LambdaPredictor  
 
 MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "lambda_mlp.pt"
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 API_METHODS = METHODS + ("tv_adaptive",)
 # Creating the FastAPI application, returns an application obj stored in the var app
 app = FastAPI(title="Adaptive Denoise API")
@@ -40,6 +43,10 @@ def to_png_based64(image: np.ndarray) -> str:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/")
+def index():
+    return FileResponse(STATIC_DIR / "index.html")
 
 @app.post("/denoise")
 async def denoise_endpoint(
