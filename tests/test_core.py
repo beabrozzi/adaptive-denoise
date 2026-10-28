@@ -56,3 +56,23 @@ def test_api_rejects_bad_method():
         data={"method": "magic"},
     )
     assert r.status_code == 400
+
+def _png_bytes():
+    buf = io.BytesIO()
+    Image.fromarray((CLEAN * 255).astype(np.uint8)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_api_adaptive_predicts_param():
+    r = client.post("/denoise", files={"file": ("x.png", _png_bytes(), "image/png")},
+                    data={"method": "tv_adaptive"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["param_source"] == "predicted"
+    assert body["param"] > 0
+
+
+def test_api_requires_param_for_fixed_methods():
+    r = client.post("/denoise", files={"file": ("x.png", _png_bytes(), "image/png")},
+                    data={"method": "tv"})
+    assert r.status_code == 400
